@@ -25,13 +25,7 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> with WidgetsBindingObserver {
   String query = '';
-  List<Map<String, String>> items = [
-    {'name': 'Apple', 'alarm': '07:30 AM'},
-    {'name': 'Banana', 'alarm': '10:00 AM'},
-    {'name': 'Orange', 'alarm': '03:15 PM'},
-    {'name': 'Grapes', 'alarm': '05:45 PM'},
-    {'name': 'Mango', 'alarm': '11:59 PM'}
-  ];
+  List<Map<String, String>> items = [];
   List<Map<String, String>> filteredItems = [];
   List<String> alarmTimes = []; // Store all alarm times in an array
   Map<String, String>? _currentAlarmItem; // Track the current alarm item
