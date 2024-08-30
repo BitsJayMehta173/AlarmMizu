@@ -12,7 +12,6 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       home: SearchPage(),
     );
   }
@@ -29,11 +28,12 @@ class _SearchPageState extends State<SearchPage> {
     {'name': 'Apple', 'alarm': '07:30 AM'},
     {'name': 'Banana', 'alarm': '10:00 AM'},
     {'name': 'Orange', 'alarm': '03:15 PM'},
-    {'name': 'Grapes', 'alarm': '05:43 PM'},
+    {'name': 'Grapes', 'alarm': '05:45 PM'},
     {'name': 'Mango', 'alarm': '11:59 PM'}
   ];
   List<Map<String, String>> filteredItems = [];
   List<String> alarmTimes = []; // Store all alarm times in an array
+  Map<String, String>? _currentAlarmItem; // Track the current alarm item
 
   late AudioPlayer _audioPlayer;
   late AudioCache _audioCache;
@@ -66,6 +66,7 @@ class _SearchPageState extends State<SearchPage> {
 
         if (alarmTimes.contains(currentTime)) {
           print('Alarm matched!'); // Debug: Alarm time matched
+          _currentAlarmItem = items.firstWhere((item) => item['alarm'] == currentTime);
           _playRingtone();
           _showAlarmDialog(context);
         }
@@ -107,6 +108,13 @@ class _SearchPageState extends State<SearchPage> {
               child: Text('OK'),
               onPressed: () {
                 _stopRingtone();
+                if (_currentAlarmItem != null) {
+                  setState(() {
+                    items.remove(_currentAlarmItem!);
+                    filteredItems.remove(_currentAlarmItem!);
+                    alarmTimes = items.map((item) => item['alarm']!).toList(); // Update the alarmTimes array
+                  });
+                }
                 Navigator.of(context).pop();
               },
             ),
@@ -189,6 +197,74 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
+  void _editItemName(Map<String, String> item) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        String newName = item['name']!;
+        return AlertDialog(
+          title: Text('Edit Item Name'),
+          content: TextField(
+            onChanged: (value) {
+              newName = value;
+            },
+            controller: TextEditingController(text: item['name']),
+            decoration: InputDecoration(hintText: "Enter new name"),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Save'),
+              onPressed: () {
+                setState(() {
+                  item['name'] = newName;
+                  updateSearch(query);
+                });
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _deleteItem(Map<String, String> item) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Confirm Deletion'),
+          content: Text('Are you sure you want to delete ${item['name']}?'),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: Text('Delete'),
+              onPressed: () {
+                setState(() {
+                  items.remove(item);
+                  filteredItems.remove(item);
+                  alarmTimes = items.map((item) => item['alarm']!).toList(); // Update the alarmTimes array
+                });
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   void dispose() {
     _alarmCheckTimer.cancel(); // Cancel the timer when the widget is disposed
@@ -228,6 +304,19 @@ class _SearchPageState extends State<SearchPage> {
             subtitle: filteredItems[index]['alarm']!.isNotEmpty
                 ? Text('Alarm set for: ${filteredItems[index]['alarm']}')
                 : null,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: Icon(Icons.edit),
+                  onPressed: () => _editItemName(filteredItems[index]),
+                ),
+                IconButton(
+                  icon: Icon(Icons.delete),
+                  onPressed: () => _deleteItem(filteredItems[index]),
+                ),
+              ],
+            ),
             onTap: () => navigateToDetailPage(context, filteredItems[index]['name']!),
           );
         },
