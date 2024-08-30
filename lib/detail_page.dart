@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 class DetailPage extends StatefulWidget {
   final String item;
@@ -17,39 +16,50 @@ class DetailPage extends StatefulWidget {
 }
 
 class _DetailPageState extends State<DetailPage> {
-  late String alarmTime;
+  TimeOfDay? _selectedTime;
+  String? _formattedTime;
 
   @override
   void initState() {
     super.initState();
-    alarmTime = widget.initialAlarmTime;
+    _selectedTime = _parseTimeOfDay(widget.initialAlarmTime);
+    _formattedTime = widget.initialAlarmTime;
   }
 
-  void _selectTime() async {
-    final TimeOfDay? selectedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(
-        DateFormat('hh:mm a').parse(alarmTime),
-      ),
-    );
-
-    if (selectedTime != null) {
-      final now = DateTime.now();
-      final selectedDateTime = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        selectedTime.hour,
-        selectedTime.minute,
+  TimeOfDay _parseTimeOfDay(String timeString) {
+    final format = RegExp(r'(\d+):(\d+) (AM|PM)');
+    final match = format.firstMatch(timeString);
+    if (match != null) {
+      final hour = int.parse(match.group(1)!);
+      final minute = int.parse(match.group(2)!);
+      final period = match.group(3)!;
+      return TimeOfDay(
+        hour: period == 'AM' ? hour : (hour % 12) + 12,
+        minute: minute,
       );
-      final formattedTime = DateFormat('hh:mm a').format(selectedDateTime);
-
-      setState(() {
-        alarmTime = formattedTime;
-      });
-
-      widget.onAlarmSet(widget.item, formattedTime);
+    } else {
+      return TimeOfDay.now();
     }
+  }
+
+  Future<void> _selectTime(BuildContext context) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _selectedTime!,
+    );
+    if (picked != null && picked != _selectedTime) {
+      setState(() {
+        _selectedTime = picked;
+        _formattedTime = _formatTimeOfDay(picked);
+        widget.onAlarmSet(widget.item, _formattedTime!);
+      });
+    }
+  }
+
+  String _formatTimeOfDay(TimeOfDay time) {
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '${hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')} $period';
   }
 
   @override
@@ -62,11 +72,11 @@ class _DetailPageState extends State<DetailPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            Text('Current alarm time: $alarmTime'),
+            Text('Alarm set for: $_formattedTime'),
             SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _selectTime,
-              child: Text('Select Alarm Time'),
+              onPressed: () => _selectTime(context),
+              child: Text('Set Alarm'),
             ),
           ],
         ),

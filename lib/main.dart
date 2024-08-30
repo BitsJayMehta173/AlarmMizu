@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:intl/intl.dart';
 import 'detail_page.dart';
@@ -22,7 +23,7 @@ class SearchPage extends StatefulWidget {
   _SearchPageState createState() => _SearchPageState();
 }
 
-class _SearchPageState extends State<SearchPage> {
+class _SearchPageState extends State<SearchPage> with WidgetsBindingObserver {
   String query = '';
   List<Map<String, String>> items = [
     {'name': 'Apple', 'alarm': '07:30 AM'},
@@ -40,18 +41,35 @@ class _SearchPageState extends State<SearchPage> {
   bool _isPlaying = false;
   DateTime? _lastCheckedTime;
   late Timer _alarmCheckTimer;
+  FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+  bool _alarmTriggeredInBackground = false; // Track if the alarm was triggered
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     filteredItems = items;
     _audioPlayer = AudioPlayer();
     _audioCache = AudioCache(prefix: 'assets/');
     
+    // Initialize the notification plugin
+    _initializeNotifications();
+
     // Populate the alarmTimes array
     alarmTimes = items.map((item) => item['alarm']!).toList();
 
     _startAlarmChecker();
+  }
+
+  Future<void> _initializeNotifications() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const InitializationSettings initializationSettings =
+        InitializationSettings(android: initializationSettingsAndroid);
+
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
   }
 
   void _startAlarmChecker() {
@@ -68,7 +86,8 @@ class _SearchPageState extends State<SearchPage> {
           print('Alarm matched!'); // Debug: Alarm time matched
           _currentAlarmItem = items.firstWhere((item) => item['alarm'] == currentTime);
           _playRingtone();
-          _showAlarmDialog(context);
+          _showAlarmNotification();
+          _alarmTriggeredInBackground = true;
         }
       }
     });
@@ -95,7 +114,31 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
+  Future<void> _showAlarmNotification() async {
+    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+      'your_channel_id', // Channel ID
+      'your_channel_name', // Channel Name
+      channelDescription: 'your_channel_description', // Channel Description
+      importance: Importance.max,
+      priority: Priority.high,
+      ticker: 'ticker',
+    );
+
+    const NotificationDetails platformChannelSpecifics =
+        NotificationDetails(android: androidPlatformChannelSpecifics);
+
+    await flutterLocalNotificationsPlugin.show(
+      0,
+      'Alarm',
+      'Time to take action!',
+      platformChannelSpecifics,
+    );
+  }
+
   void _showAlarmDialog(BuildContext context) {
+    if (_currentAlarmItem == null) return; // Ensure there is an alarm to show
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -122,6 +165,14 @@ class _SearchPageState extends State<SearchPage> {
         );
       },
     );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _alarmTriggeredInBackground) {
+      _alarmTriggeredInBackground = false;
+      _showAlarmDialog(context);
+    }
   }
 
   void updateSearch(String newQuery) {
@@ -253,7 +304,7 @@ class _SearchPageState extends State<SearchPage> {
               onPressed: () {
                 setState(() {
                   items.remove(item);
-                  filteredItems.remove(item);
+                  updateSearch(query);
                   alarmTimes = items.map((item) => item['alarm']!).toList(); // Update the alarmTimes array
                 });
                 Navigator.of(context).pop();
@@ -267,10 +318,9 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   void dispose() {
-    _alarmCheckTimer.cancel(); // Cancel the timer when the widget is disposed
-    if (_isPlaying) {
-      _audioPlayer.stop(); // Stop the ringtone if it's still playing
-    }
+    _audioPlayer.dispose();
+    _alarmCheckTimer.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
@@ -278,53 +328,47 @@ class _SearchPageState extends State<SearchPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8.0),
-            border: Border.all(color: Colors.grey, width: 1.5),
-          ),
-          child: TextField(
-            onChanged: (value) => updateSearch(value),
-            style: TextStyle(color: Colors.black),
-            decoration: InputDecoration(
-              hintText: 'Search...',
-              hintStyle: TextStyle(color: Colors.grey),
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(horizontal: 16.0),
-            ),
-          ),
-        ),
+        title: Text('Search Page'),
       ),
-      body: ListView.builder(
-        itemCount: filteredItems.length,
-        itemBuilder: (context, index) {
-          return ListTile(
-            title: Text(filteredItems[index]['name']!),
-            subtitle: filteredItems[index]['alarm']!.isNotEmpty
-                ? Text('Alarm set for: ${filteredItems[index]['alarm']}')
-                : null,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: Icon(Icons.edit),
-                  onPressed: () => _editItemName(filteredItems[index]),
-                ),
-                IconButton(
-                  icon: Icon(Icons.delete),
-                  onPressed: () => _deleteItem(filteredItems[index]),
-                ),
-              ],
+      body: Column(
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.all(8.0),
+            child: TextField(
+              onChanged: updateSearch,
+              decoration: InputDecoration(
+                labelText: 'Search',
+                suffixIcon: Icon(Icons.search),
+              ),
             ),
-            onTap: () => navigateToDetailPage(context, filteredItems[index]['name']!),
-          );
-        },
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: filteredItems.length,
+              itemBuilder: (context, index) {
+                final item = filteredItems[index];
+                return Card(
+                  child: ListTile(
+                    title: Text(item['name']!),
+                    subtitle: Text(item['alarm']!.isNotEmpty
+                        ? 'Alarm set for ${item['alarm']}'
+                        : 'No alarm set'),
+                    onTap: () => navigateToDetailPage(context, item['name']!),
+                    onLongPress: () => _editItemName(item),
+                    trailing: IconButton(
+                      icon: Icon(Icons.delete),
+                      onPressed: () => _deleteItem(item),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: onFabPressed,
         child: Icon(Icons.add),
-        backgroundColor: Colors.blue,
       ),
     );
   }
